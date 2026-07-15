@@ -4,8 +4,8 @@ import { ArrowLeft, Users, CheckCircle2, AlertCircle, Sparkles, RefreshCw } from
 import { useAuth } from '../hooks/useAuth';
 import { roomApi } from '../services/room';
 import type { RoomResponse } from '../services/room';
-import { preferenceApi } from '../services/preferences';
-import type { PreferenceResponse } from '../services/preferences';
+// import { preferenceApi } from '../services/preferences';
+// import type { PreferenceResponse } from '../services/preferences';
 import { recommendationsApi } from '../services/recommendations';
 import type { RecommendationMovie } from '../services/recommendations';
 import { RecommendationResults } from '../components/preferences/RecommendationResults';
@@ -14,10 +14,10 @@ export const RoomDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const roomId = Number(id);
   const { user } = useAuth();
-  
+
   const [room, setRoom] = useState<RoomResponse | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationMovie[]>([]);
-  
+
   const [loading, setLoading] = useState(true);
   const [recsLoading, setRecsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
