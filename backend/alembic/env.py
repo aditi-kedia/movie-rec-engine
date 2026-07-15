@@ -5,29 +5,34 @@ import sys
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Load database URL from environment before importing app models
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env"))
+load_dotenv()
+
+db_url = os.getenv("DATABASE_URL")
+if not db_url or not db_url.strip():
+    raise ValueError("DATABASE_URL environment variable is required for migrations.")
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
 from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import models metadata
+# Import models metadata after dotenv is loaded
 from app.models import Base
 target_metadata = Base.metadata
-
-# Dynamic database URL injection
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env"))
-db_url = os.getenv("DATABASE_URL", "sqlite:///./movies.db")
-config.set_main_option("sqlalchemy.url", db_url)
 
 
 # other values from the config, defined by the needs of env.py,
