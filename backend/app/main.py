@@ -15,10 +15,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
+import os
+
 # Configure CORS for frontend access
+frontend_url = os.getenv("FRONTEND_URL", "https://movie-rec-engine-rouge.vercel.app")
+origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+]
+if frontend_url:
+    if "," in frontend_url:
+        origins.extend([o.strip() for o in frontend_url.split(",")])
+    else:
+        origins.append(frontend_url)
+origins = list(set(origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For dev, we can allow all; restrict in production
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

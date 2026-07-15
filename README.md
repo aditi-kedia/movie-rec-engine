@@ -2,6 +2,12 @@
 
 A web application that generates highly personalized movie recommendations for individuals (Solo) and room lobbies (Group) using TMDb and Groq Llama 3 parsing.
 
+🎬 Live Demo:
+https://movie-rec-engine-rouge.vercel.app
+
+📖 Backend API Docs:
+https://YOUR-RENDER-BACKEND.onrender.com/docs
+
 ## 🚀 Database Stack: Supabase PostgreSQL
 
 The application uses **Supabase PostgreSQL** as the sole supported database backend. SQLite fallback is completely disabled.
