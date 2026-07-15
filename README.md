@@ -6,7 +6,7 @@ A web application that generates highly personalized movie recommendations for i
 https://movie-rec-engine-rouge.vercel.app
 
 📖 Backend API Docs:
-https://YOUR-RENDER-BACKEND.onrender.com/docs
+https://movie-rec-engine-backend.onrender.com/doc
 
 ## 🚀 Database Stack: Supabase PostgreSQL
 
