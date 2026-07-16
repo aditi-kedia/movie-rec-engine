@@ -30,6 +30,7 @@ export const PreferenceForm: React.FC = () => {
   // Recommendations state
   const [recommendations, setRecommendations] = useState<RecommendationMovie[] | null>(null);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [isExpanding, setIsExpanding] = useState(false);
 
   // Form states
   const [similarMovies, setSimilarMovies] = useState<TMDbSelection[]>([]);
@@ -177,6 +178,31 @@ export const PreferenceForm: React.FC = () => {
     }
   };
 
+  const handleExpandSearch = async () => {
+    setIsExpanding(true);
+    try {
+      const data = await recommendationsApi.getSoloRecommendations(true);
+      setRecommendations(data);
+    } catch (err) {
+      console.error("Failed to expand search", err);
+    } finally {
+      setIsExpanding(false);
+    }
+  };
+
+  const handleClearAll = () => {
+    const confirmClear = window.confirm("Are you sure you want to clear all preference fields? This cannot be undone.");
+    if (confirmClear) {
+      setSimilarMovies([]);
+      setSelectedGenres([]);
+      setPreferredCast([]);
+      setPreferredCrew([]);
+      setMinRuntime('');
+      setMaxRuntime('');
+      setFreeText('');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex flex-col justify-center items-center h-[60vh]">
@@ -228,7 +254,11 @@ export const PreferenceForm: React.FC = () => {
           </div>
         </div>
 
-        <RecommendationResults movies={recommendations} />
+        <RecommendationResults 
+          movies={recommendations} 
+          onExpandSearch={handleExpandSearch}
+          isExpanding={isExpanding}
+        />
       </div>
     );
   }
@@ -487,6 +517,14 @@ export const PreferenceForm: React.FC = () => {
             >
               <Save className="w-4 h-4" />
               {submitting ? 'Saving Preset...' : 'Save Preference'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="w-full mt-3 bg-transparent hover:bg-[#ff4b4b]/10 border border-[#ff4b4b]/30 hover:border-[#ff4b4b]/50 text-[#ff4b4b] py-3 rounded-lg font-bold transition-all flex justify-center items-center gap-1.5 text-sm cursor-pointer"
+            >
+              Clear All Preferences
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import concurrent.futures
+import copy
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from typing import List, Dict, Any, Optional
@@ -8,7 +9,7 @@ from app.models.room import GroupRoom, GroupMember
 from app.models.user import User
 from app.services import tmdb_service
 from app.recommendation.parser import parse_free_text
-from app.recommendation.scorer import score_movie
+from app.recommendation.scorer import score_movie, satisfies_hard_constraints
 
 def get_ids(items) -> List[int]:
     if not items:
@@ -124,6 +125,33 @@ def build_preference_profile(preference: Preference) -> Dict[str, Any]:
         "excluded_genres": []
     }
 
+def relax_profile_constraints(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Relax lower-priority hard constraints (runtime, release year). Exclusions remain untouched."""
+    relaxed = copy.deepcopy(profile)
+    
+    # 1. Relax profile runtime constraints
+    if relaxed.get("runtime_min") is not None:
+        relaxed["runtime_min"] = max(0, relaxed["runtime_min"] - 30)
+    if relaxed.get("runtime_max") is not None:
+        relaxed["runtime_max"] = relaxed["runtime_max"] + 30
+        
+    # 2. Relax hard constraints inside extracted_free_text
+    extracted = relaxed.get("extracted_free_text", {})
+    if extracted:
+        hc = extracted.get("hard_constraints", {})
+        if hc:
+            if hc.get("with_runtime_gte") is not None:
+                hc["with_runtime_gte"] = max(0, hc["with_runtime_gte"] - 30)
+            if hc.get("with_runtime_lte") is not None:
+                hc["with_runtime_lte"] = hc["with_runtime_lte"] + 30
+                
+            if hc.get("release_year_gte") is not None:
+                hc["release_year_gte"] = hc["release_year_gte"] - 10
+            if hc.get("release_year_lte") is not None:
+                hc["release_year_lte"] = hc["release_year_lte"] + 10
+                
+    return relaxed
+
 def gather_candidates(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Fetch movie candidates from discover queries and similar movie recommendations."""
     candidates = {}
@@ -157,30 +185,33 @@ def gather_candidates(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
     }
     
     extracted = profile.get("extracted_free_text", {})
-    genres = profile.get("preferred_genres", []) + extracted.get("with_genres", [])
+    hc = extracted.get("hard_constraints", {}) if extracted else {}
+    sp = extracted.get("soft_preferences", {}) if extracted else {}
+    
+    genres = profile.get("preferred_genres", []) + sp.get("with_genres", []) + hc.get("must_genres", [])
     cast = profile.get("preferred_cast", [])
     crew = profile.get("preferred_crew", [])
     
-    rt_min = profile.get("runtime_min") or extracted.get("with_runtime_gte")
-    rt_max = profile.get("runtime_max") or extracted.get("with_runtime_lte")
+    rt_min = profile.get("runtime_min") or hc.get("with_runtime_gte") or sp.get("prefer_runtime_gte")
+    rt_max = profile.get("runtime_max") or hc.get("with_runtime_lte") or sp.get("prefer_runtime_lte")
     
     if rt_min:
         base_filter["with_runtime.gte"] = rt_min
     if rt_max:
         base_filter["with_runtime.lte"] = rt_max
         
-    lang = extracted.get("with_original_language")
+    lang = hc.get("with_original_language") or sp.get("prefer_original_language")
     if lang:
         base_filter["with_original_language"] = lang
         
-    year_gte = extracted.get("release_year_gte")
-    year_lte = extracted.get("release_year_lte")
+    year_gte = hc.get("release_year_gte") or sp.get("prefer_year_gte")
+    year_lte = hc.get("release_year_lte") or sp.get("prefer_year_lte")
     if year_gte:
         base_filter["primary_release_date.gte"] = f"{year_gte}-01-01"
     if year_lte:
         base_filter["primary_release_date.lte"] = f"{year_lte}-12-31"
 
-    without_genres = extracted.get("without_genres", [])
+    without_genres = hc.get("without_genres", [])
     if without_genres:
         base_filter["without_genres"] = ",".join(str(g) for g in without_genres)
 
@@ -235,10 +266,17 @@ def gather_candidates(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def pre_score_candidate(movie: Dict[str, Any], profile: Dict[str, Any]) -> float:
     """Quickly score candidates using only search result fields to filter the top candidates."""
+    # Enforce strict hard constraints in pre-scoring
+    if not satisfies_hard_constraints(movie, profile, is_enriched=False):
+        return 0.0
+
     score = 0.0
+    extracted = profile.get("extracted_free_text", {})
+    hc = extracted.get("hard_constraints", {}) if extracted else {}
+    sp = extracted.get("soft_preferences", {}) if extracted else {}
     
     # 1. Genre Match (up to 25 points)
-    genres = profile.get("preferred_genres", []) + profile.get("extracted_free_text", {}).get("with_genres", [])
+    genres = profile.get("preferred_genres", []) + sp.get("with_genres", []) + hc.get("must_genres", [])
     movie_genres = movie.get("genre_ids", [])
     if genres and movie_genres:
         matches = sum(1 for g in movie_genres if g in genres)
@@ -247,15 +285,15 @@ def pre_score_candidate(movie: Dict[str, Any], profile: Dict[str, Any]) -> float
         score += 25.0
         
     # 2. Language Match (up to 5 points)
-    pref_lang = profile.get("extracted_free_text", {}).get("with_original_language") or profile.get("preferred_language")
+    pref_lang = hc.get("with_original_language") or sp.get("prefer_original_language") or profile.get("preferred_language")
     if pref_lang and movie.get("original_language") == pref_lang:
         score += 5.0
         
     # 3. Year Match (up to 5 points)
     release_date = movie.get("release_date", "")
     release_year = int(release_date.split("-")[0]) if release_date and len(release_date) >= 4 and release_date.split("-")[0].isdigit() else None
-    pref_year_gte = profile.get("extracted_free_text", {}).get("release_year_gte")
-    pref_year_lte = profile.get("extracted_free_text", {}).get("release_year_lte")
+    pref_year_gte = hc.get("release_year_gte") or sp.get("prefer_year_gte")
+    pref_year_lte = hc.get("release_year_lte") or sp.get("prefer_year_lte")
     
     if release_year:
         if pref_year_gte and pref_year_lte:
@@ -280,12 +318,15 @@ def pre_score_candidate(movie: Dict[str, Any], profile: Dict[str, Any]) -> float
 
 def enrich_and_score_candidates(candidates_list: List[Dict[str, Any]], profile: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Filter to top 30 candidates using pre-scoring, enrich them in parallel, and run full scoring."""
-    # Pre-score and keep the top 30 candidates to speed up details fetch
-    sorted_candidates = sorted(
-        candidates_list, 
-        key=lambda m: pre_score_candidate(m, profile), 
-        reverse=True
-    )[:30]
+    # Filter candidates by pre-score first (pre-score of 0 means hard constraint violation)
+    scored_candidates = []
+    for m in candidates_list:
+        p_score = pre_score_candidate(m, profile)
+        if p_score > 0.0:
+            scored_candidates.append((p_score, m))
+            
+    # Sort and keep the top 100 candidates to speed up details fetch
+    sorted_candidates = [m for _, m in sorted(scored_candidates, key=lambda x: x[0], reverse=True)[:100]]
     
     enriched_movies = []
     # Fetch details in parallel (max workers 20)
@@ -311,6 +352,16 @@ def enrich_and_score_candidates(candidates_list: List[Dict[str, Any]], profile: 
     for movie in enriched_movies:
         score, reasons = score_movie(movie, profile)
         if score > 0.0:
+            credits = movie.get("credits", {})
+            crew_list = credits.get("crew", []) if isinstance(credits, dict) else []
+            director = next((member.get("name") for member in crew_list if member.get("job") == "Director"), None)
+            
+            cast_list = credits.get("cast", []) if isinstance(credits, dict) else []
+            cast_names = [actor.get("name") for actor in cast_list[:3] if actor.get("name")]
+            
+            genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
+            runtime = movie.get("runtime")
+
             recommendations.append({
                 "id": movie["id"],
                 "title": movie.get("title") or movie.get("name"),
@@ -318,26 +369,33 @@ def enrich_and_score_candidates(candidates_list: List[Dict[str, Any]], profile: 
                 "poster_path": movie.get("poster_path", ""),
                 "release_date": movie.get("release_date", ""),
                 "score": round(score, 1),
-                "reasons": reasons
+                "reasons": reasons,
+                "director": director,
+                "cast": cast_names,
+                "genres": genres,
+                "runtime": runtime
             })
             
     # Sort by score descending
     recommendations.sort(key=lambda r: r["score"], reverse=True)
-    return recommendations[:10]
+    return recommendations[:100]
 
-def recommend_movies_solo(db: Session, user_id: int) -> List[Dict[str, Any]]:
-    """Generate top 10 recommendations for a single user."""
+def recommend_movies_solo(db: Session, user_id: int, relax_constraints: bool = False) -> List[Dict[str, Any]]:
+    """Generate top 100 recommendations for a single user."""
     # Fetch latest preference preset
     preference = db.query(Preference).filter(Preference.user_id == user_id).order_by(Preference.created_at.desc()).first()
     if not preference:
         return []
         
     profile = build_preference_profile(preference)
+    if relax_constraints:
+        profile = relax_profile_constraints(profile)
+        
     candidates = gather_candidates(profile)
     return enrich_and_score_candidates(candidates, profile)
 
-def recommend_movies_group(db: Session, room_id: int) -> List[Dict[str, Any]]:
-    """Generate joint top 10 recommendations for a group room."""
+def recommend_movies_group(db: Session, room_id: int, relax_constraints: bool = False) -> List[Dict[str, Any]]:
+    """Generate joint top 100 recommendations for a group room."""
     # 1. Fetch room members
     members = db.query(GroupMember).filter(GroupMember.room_id == room_id).all()
     if not members:
@@ -362,6 +420,9 @@ def recommend_movies_group(db: Session, room_id: int) -> List[Dict[str, Any]]:
             continue
             
         profile = build_preference_profile(preference)
+        if relax_constraints:
+            profile = relax_profile_constraints(profile)
+            
         member_profiles.append({
             "username": user.username,
             "profile": profile
@@ -374,13 +435,22 @@ def recommend_movies_group(db: Session, room_id: int) -> List[Dict[str, Any]]:
     if not member_profiles:
         return []
 
-    # Filter combined candidates to top 30 using average pre-scores across all members
+    # Filter combined candidates to only those satisfying hard constraints for all room members
     candidates_list = list(combined_candidates.values())
-    
+    valid_candidates = []
+    for c in candidates_list:
+        is_valid = True
+        for mp in member_profiles:
+            if not satisfies_hard_constraints(c, mp["profile"], is_enriched=False):
+                is_valid = False
+                break
+        if is_valid:
+            valid_candidates.append(c)
+            
     def group_pre_score(movie: Dict[str, Any]) -> float:
         return sum(pre_score_candidate(movie, mp["profile"]) for mp in member_profiles) / len(member_profiles)
         
-    sorted_candidates = sorted(candidates_list, key=group_pre_score, reverse=True)[:30]
+    sorted_candidates = sorted(valid_candidates, key=group_pre_score, reverse=True)[:100]
 
     # Enrich candidates details in parallel
     enriched_movies = []
@@ -421,11 +491,12 @@ def recommend_movies_group(db: Session, room_id: int) -> List[Dict[str, Any]]:
             individual_scores[uname] = round(score, 1)
             all_reasons.extend(reasons)
             
+        if is_vetoed:
+            # Skip group recommendations if a movie fails a hard constraint for any member (is vetoed)
+            continue
+            
         avg_score = sum(individual_scores.values()) / len(individual_scores)
         
-        if is_vetoed:
-            avg_score = max(0.0, avg_score - 50.0)
-            
         reason_counts = {}
         for r in all_reasons:
             reason_counts[r] = reason_counts.get(r, 0) + 1
@@ -435,6 +506,16 @@ def recommend_movies_group(db: Session, room_id: int) -> List[Dict[str, Any]]:
             common_reasons = sorted(reason_counts.keys(), key=lambda r: reason_counts[r], reverse=True)[:3]
             
         if avg_score > 0.0:
+            credits = movie.get("credits", {})
+            crew_list = credits.get("crew", []) if isinstance(credits, dict) else []
+            director = next((member.get("name") for member in crew_list if member.get("job") == "Director"), None)
+            
+            cast_list = credits.get("cast", []) if isinstance(credits, dict) else []
+            cast_names = [actor.get("name") for actor in cast_list[:3] if actor.get("name")]
+            
+            genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
+            runtime = movie.get("runtime")
+
             group_recommendations.append({
                 "id": movie["id"],
                 "title": movie.get("title") or movie.get("name"),
@@ -443,8 +524,12 @@ def recommend_movies_group(db: Session, room_id: int) -> List[Dict[str, Any]]:
                 "release_date": movie.get("release_date", ""),
                 "score": round(avg_score, 1),
                 "individual_scores": individual_scores,
-                "reasons": common_reasons[:4]
+                "reasons": common_reasons[:4],
+                "director": director,
+                "cast": cast_names,
+                "genres": genres,
+                "runtime": runtime
             })
 
     group_recommendations.sort(key=lambda r: r["score"], reverse=True)
-    return group_recommendations[:10]
+    return group_recommendations[:100]

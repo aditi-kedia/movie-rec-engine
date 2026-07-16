@@ -85,10 +85,11 @@ def select_room_preference(
 @router.get("/{room_id}/recommendations")
 def get_room_recommendations(
     room_id: int,
+    relax_constraints: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Retrieve joint top 10 recommendations for a group room."""
+    """Retrieve joint top 100 recommendations for a group room."""
     # Verify user is a member of the room
     member = db.query(GroupMember).filter(
         GroupMember.room_id == room_id,
@@ -103,4 +104,26 @@ def get_room_recommendations(
             detail="You must be a member or host of this room to view recommendations"
         )
         
-    return engine.recommend_movies_group(db, room_id)
+    return engine.recommend_movies_group(db, room_id, relax_constraints=relax_constraints)
+
+@router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+def dissolve_room(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Dissolve/Delete a room. Only the host can perform this action."""
+    room = db.query(GroupRoom).filter(GroupRoom.room_id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+        
+    if room.host_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host can dissolve the room"
+        )
+        
+    # Delete room (cascading will delete the members)
+    db.delete(room)
+    db.commit()
+    return None

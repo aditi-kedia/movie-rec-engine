@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Users, CheckCircle2, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Users, CheckCircle2, AlertCircle, Sparkles, RefreshCw, Trash2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { roomApi } from '../services/room';
 import type { RoomResponse } from '../services/room';
@@ -14,12 +14,14 @@ export const RoomDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const roomId = Number(id);
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [room, setRoom] = useState<RoomResponse | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationMovie[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [isExpanding, setIsExpanding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchRoomData = async (showLoadingState = false) => {
@@ -45,10 +47,35 @@ export const RoomDetail: React.FC = () => {
     }
   };
 
+  const handleExpandSearch = async () => {
+    setIsExpanding(true);
+    try {
+      const recs = await recommendationsApi.getRoomRecommendations(roomId, true);
+      setRecommendations(recs);
+    } catch (err) {
+      console.error("Failed to expand search", err);
+    } finally {
+      setIsExpanding(false);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     fetchRoomData(true);
   }, [roomId]);
+
+  const handleDissolveRoom = async () => {
+    const confirmed = window.confirm("Are you sure you want to dissolve this lobby? This will delete the room and disconnect all members permanently.");
+    if (confirmed) {
+      try {
+        await roomApi.dissolveRoom(roomId);
+        navigate('/dashboard');
+      } catch (err) {
+        console.error("Failed to dissolve room", err);
+        alert("Failed to dissolve room. Please try again.");
+      }
+    }
+  };
 
   // Real-time polling every 10 seconds to update lobby members and recommendations
   useEffect(() => {
@@ -117,14 +144,26 @@ export const RoomDetail: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={handleManualRefresh}
-          disabled={recsLoading}
-          className="px-4 py-2 bg-[#24303c] hover:bg-[#303840] border border-[#303840] disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${recsLoading ? 'animate-spin' : ''}`} />
-          Refresh Room
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleManualRefresh}
+            disabled={recsLoading}
+            className="px-4 py-2 bg-[#24303c] hover:bg-[#303840] border border-[#303840] disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${recsLoading ? 'animate-spin' : ''}`} />
+            Refresh Room
+          </button>
+
+          {room.host_id === user?.user_id && (
+            <button
+              onClick={handleDissolveRoom}
+              className="px-4 py-2 bg-transparent hover:bg-[#ff4b4b]/10 border border-[#ff4b4b]/30 hover:border-[#ff4b4b]/50 text-[#ff4b4b] rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Dissolve Room
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -241,7 +280,12 @@ export const RoomDetail: React.FC = () => {
                 <p className="text-xs text-[#9ab] leading-relaxed">
                   Generated from <span className="text-white font-bold">{activePrefsCount}</span> active taste profiles. Matches are ranked by average score and adjusted for strict exclusions.
                 </p>
-                <RecommendationResults movies={recommendations} isGroup={true} />
+                <RecommendationResults 
+                  movies={recommendations} 
+                  isGroup={true} 
+                  onExpandSearch={handleExpandSearch}
+                  isExpanding={isExpanding}
+                />
               </div>
             ) : (
               <div className="py-20 text-center bg-[#24303c]/10 border border-dashed border-[#303840] rounded-xl flex flex-col items-center justify-center p-6">

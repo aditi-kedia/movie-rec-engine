@@ -28,6 +28,7 @@ export const Profile: React.FC = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Top 4 Favorite Movies states
@@ -71,6 +72,15 @@ export const Profile: React.FC = () => {
     loadFavourites();
   }, []);
 
+  const handleCancel = () => {
+    if (user) {
+      setUsername(user.username);
+      setEmail(user.email);
+    }
+    setIsEditing(false);
+    setProfileMsg(null);
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileLoading(true);
@@ -79,6 +89,7 @@ export const Profile: React.FC = () => {
       await userApi.updateProfile({ username, email });
       await refreshUser();
       setProfileMsg({ type: 'success', text: 'Account details updated successfully.' });
+      setIsEditing(false);
     } catch (err: any) {
       setProfileMsg({ 
         type: 'error', 
@@ -209,7 +220,10 @@ export const Profile: React.FC = () => {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="block w-full pl-10 pr-4 py-2.5 bg-[#24303c] border border-[#303840] rounded-xl text-white focus:outline-none focus:border-[#40bcf4] text-sm transition-colors"
+                    disabled={!isEditing}
+                    className={`block w-full pl-10 pr-4 py-2.5 bg-[#24303c] border border-[#303840] rounded-xl text-white focus:outline-none focus:border-[#40bcf4] text-sm transition-colors ${
+                      !isEditing ? 'opacity-65 cursor-not-allowed select-none bg-[#1c252d]/50' : ''
+                    }`}
                   />
                 </div>
               </div>
@@ -226,25 +240,47 @@ export const Profile: React.FC = () => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="block w-full pl-10 pr-4 py-2.5 bg-[#24303c] border border-[#303840] rounded-xl text-white focus:outline-none focus:border-[#40bcf4] text-sm transition-colors"
+                    disabled={!isEditing}
+                    className={`block w-full pl-10 pr-4 py-2.5 bg-[#24303c] border border-[#303840] rounded-xl text-white focus:outline-none focus:border-[#40bcf4] text-sm transition-colors ${
+                      !isEditing ? 'opacity-65 cursor-not-allowed select-none bg-[#1c252d]/50' : ''
+                    }`}
                   />
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={profileLoading}
-                className="w-full mt-2 flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-[#40bcf4] hover:bg-[#34a7db] transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-[#40bcf4]/10"
-              >
-                {profileLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    Save Changes
-                  </>
-                )}
-              </button>
+              {!isEditing ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="w-full mt-2 flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-[#40bcf4] hover:bg-[#34a7db] transition-all cursor-pointer shadow-lg shadow-[#40bcf4]/10"
+                >
+                  Edit Profile
+                </button>
+              ) : (
+                <div className="flex gap-3 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="flex-1 py-2.5 px-4 rounded-xl text-sm font-bold text-[#9ab] bg-[#24303c] border border-[#303840] hover:bg-[#303840] hover:text-white transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={profileLoading}
+                    className="flex-1 flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl text-sm font-bold text-white bg-[#00c030] hover:bg-[#00a828] transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-[#00c030]/10"
+                  >
+                    {profileLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>

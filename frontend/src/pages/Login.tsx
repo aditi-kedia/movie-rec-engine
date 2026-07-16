@@ -62,7 +62,7 @@ export const Login: React.FC = () => {
           <div className="space-y-4">
             <div>
               <label htmlFor="email-address" className="block text-xs font-bold uppercase tracking-wider text-[#9ab] mb-2">
-                Email Address
+                Username or Email Address
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#9ab] pointer-events-none">
@@ -71,12 +71,12 @@ export const Login: React.FC = () => {
                 <input
                   id="email-address"
                   name="email"
-                  type="email"
+                  type="text"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-10 pr-4 py-3 bg-[#24303c] border border-[#303840] rounded-lg text-white placeholder-[#9ab]/50 focus:outline-none focus:border-[#00c030] transition-colors text-sm"
-                  placeholder="name@example.com"
+                  placeholder="Username or email"
                 />
               </div>
             </div>

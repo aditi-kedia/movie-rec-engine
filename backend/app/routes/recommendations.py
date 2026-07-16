@@ -10,8 +10,9 @@ router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
 @router.get("/solo")
 def get_solo_recommendations(
+    relax_constraints: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Retrieve the top 10 recommendations based on the user's latest preference profile."""
-    return engine.recommend_movies_solo(db, current_user.user_id)
+    """Retrieve the top 100 recommendations based on the user's latest preference profile."""
+    return engine.recommend_movies_solo(db, current_user.user_id, relax_constraints=relax_constraints)

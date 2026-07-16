@@ -45,4 +45,8 @@ export const roomApi = {
     const response = await api.put<GroupMemberResponse>(`/rooms/${roomId}/preference/${prefId}`);
     return response.data;
   },
+
+  dissolveRoom: async (roomId: number): Promise<void> => {
+    await api.delete(`/rooms/${roomId}`);
+  },
 };
