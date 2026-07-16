@@ -1,6 +1,6 @@
 # 🎬 FilmRec: Movie Recommendation Engine
 
-A modern web application that generates highly personalized movie recommendations for individuals (**Solo**) and room lobbies (**Group**) using the TMDb catalog and Groq Llama 3 semantic parsing.
+A modern web application that generates highly personalized movie recommendations for individuals (**Solo**) and room lobbies (**Group**) using the TMDb catalog, a rule-based Recommendation Algorithm, and Groq Llama 3 semantic parsing.
 
 🎥 **Live Demo:** [movie-rec-engine-rouge.vercel.app](https://movie-rec-engine-rouge.vercel.app)  
 📖 **Backend API Docs:** [movie-rec-engine-backend.onrender.com/docs](https://movie-rec-engine-backend.onrender.com/docs)
@@ -73,10 +73,9 @@ flowchart TD
 4. **Parallel Enrichment:** Candidate movie IDs are sent in parallel via Python ThreadPoolExecutors to TMDb to fetch production companies, languages, country origins, and keywords.
 5. **Weighted Scoring:** The scorer rates movies based on overlap matching:
    * **Cast/Crew Match:** High weight if preferred actors/directors are present.
-   * **Keyword Matching:** Semantic overlap between user free-text topics and TMDb keywords.
+   * **Keyword Matching:** Semantic overlap of candidate movie keywords with user free-text topics and keywords extracted from user-selected similar movies.
    * **Genre Overlay:** Points for preferred genres.
-   * **Normalizers:** Rating averages and popularity values are factored in.
-6. **Explanations:** Generates natural text summaries for each recommendation (e.g., *"Recommended because it matches your interest in space exploration, stars Leonardo DiCaprio, and has high rating reviews."*).
+6. **Explanations:** Generates natural text summaries for each recommendation (e.g., *"Language Match"* or *"Matches your request for comedy"*).
 
 ---
 
